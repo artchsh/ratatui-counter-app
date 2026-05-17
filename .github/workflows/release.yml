@@ -2,7 +2,8 @@ name: Release
 
 on:
   push:
-    branches: [master, main]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 env:
@@ -12,6 +13,8 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -23,7 +26,7 @@ jobs:
             artifact: ratatui-counter-app-macos-intel
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: ratatui-counter-app-macos-apple
+            artifact: ratatui-counter-app-macos-apple-silicon
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: ratatui-counter-app-windows
@@ -48,80 +51,59 @@ jobs:
       - name: Build release
         run: cargo build --release --target ${{ matrix.target }} --no-default-features
 
-      - name: Package Linux
+      - name: Package Linux (.deb)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          mkdir -p dist/${{ matrix.artifact }}
-          cp target/${{ matrix.target }}/release/ratatui-counter-app dist/${{ matrix.artifact }}/
-          chmod +x dist/${{ matrix.artifact }}/ratatui-counter-app
-          cd dist && tar czf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
+          PKG=ratatui-counter-app_amd64
+          mkdir -p dist/$PKG/DEBIAN dist/$PKG/usr/bin
+          cp target/${{ matrix.target }}/release/ratatui-counter-app dist/$PKG/usr/bin/
+          chmod +x dist/$PKG/usr/bin/ratatui-counter-app
+          printf 'Package: ratatui-counter-app\nVersion: 0.1.0\nArchitecture: amd64\nMaintainer: artchsh\nDescription: Ratatui counter app\n' \
+            > dist/$PKG/DEBIAN/control
+          dpkg-deb --build dist/$PKG dist/ratatui-counter-app.deb
 
-      - name: Package macOS Intel
-        if: matrix.target == 'x86_64-apple-darwin'
+      - name: Package macOS
+        if: runner.os == 'macOS'
         run: |
-          APP="ratatui-counter-app.app"
-          mkdir -p "dist/$APP/Contents/MacOS"
-          cp target/${{ matrix.target }}/release/ratatui-counter-app "dist/$APP/Contents/MacOS/"
-          cat > "dist/$APP/Contents/Info.plist" << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleName</key><string>ratatui-counter-app</string>
-            <key>CFBundleExecutable</key><string>ratatui-counter-app</string>
-            <key>CFBundleIdentifier</key><string>com.local.ratatui-counter-app</string>
-            <key>CFBundleVersion</key><string>0.1.0</string>
-            <key>CFBundleShortVersionString</key><string>0.1.0</string>
-            <key>CFBundlePackageType</key><string>APPL</string>
-            <key>LSMinimumSystemVersion</key><string>12.0</string>
-          </dict>
-          </plist>
-          EOF
-          cd dist && zip -r ${{ matrix.artifact }}.zip "$APP"
-
-      - name: Package macOS Apple Silicon
-        if: matrix.target == 'aarch64-apple-darwin'
-        run: |
-          APP="ratatui-counter-app.app"
-          mkdir -p "dist/$APP/Contents/MacOS"
-          cp target/${{ matrix.target }}/release/ratatui-counter-app "dist/$APP/Contents/MacOS/"
-          cat > "dist/$APP/Contents/Info.plist" << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleName</key><string>ratatui-counter-app</string>
-            <key>CFBundleExecutable</key><string>ratatui-counter-app</string>
-            <key>CFBundleIdentifier</key><string>com.local.ratatui-counter-app</string>
-            <key>CFBundleVersion</key><string>0.1.0</string>
-            <key>CFBundleShortVersionString</key><string>0.1.0</string>
-            <key>CFBundlePackageType</key><string>APPL</string>
-            <key>LSMinimumSystemVersion</key><string>12.0</string>
-          </dict>
-          </plist>
-          EOF
-          cd dist && zip -r ${{ matrix.artifact }}.zip "$APP"
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/ratatui-counter-app dist/${{ matrix.artifact }}
+          chmod +x dist/${{ matrix.artifact }}
 
       - name: Package Windows
         if: matrix.os == 'windows-latest'
         run: |
           mkdir dist
-          copy target\${{ matrix.target }}\release\ratatui-counter-app.exe dist\
-          cd dist
-          Compress-Archive -Path ratatui-counter-app.exe -DestinationPath ${{ matrix.artifact }}.zip
+          copy target\${{ matrix.target }}\release\ratatui-counter-app.exe dist\ratatui-counter-app.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: dist/*
-          retention-days: 30
+          retention-days: 1
+
+  source:
+    name: Source Archive
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create source archive
+        run: git archive --format=zip --output=source-code.zip HEAD
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-code
+          path: source-code.zip
+          retention-days: 1
 
   release:
     name: Create Release
-    needs: build
+    needs: [build, source]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     permissions:
       contents: write
 
@@ -136,25 +118,24 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
-          name: Release ${{ github.run_number }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', github.run_number) }}
+          name: Release ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', github.run_number) }}
           body: |
             ## Downloads
 
             | Platform | File |
             |----------|------|
-            | Linux x64 | ratatui-counter-app-linux.tar.gz |
-            | macOS Intel | ratatui-counter-app-macos-intel.zip |
-            | macOS Apple Silicon | ratatui-counter-app-macos-apple.zip |
-            | Windows x64 | ratatui-counter-app-windows.zip |
+            | Source Code | source-code.zip |
+            | Linux x64 | ratatui-counter-app.deb |
+            | macOS Intel | ratatui-counter-app-macos-intel |
+            | macOS Apple Silicon | ratatui-counter-app-macos-apple-silicon |
+            | Windows x64 | ratatui-counter-app.exe |
 
-            ## Portable Usage
+            ## Usage
 
-            **Linux**: Extract and run `./ratatui-counter-app`
-            **macOS**: Drag `.app` to Applications, or run from terminal
-            **Windows**: Extract and run `ratatui-counter-app.exe`
-
-            No installation required. Delete folder to uninstall.
+            **Linux**: `sudo dpkg -i ratatui-counter-app.deb` then run `ratatui-counter-app`
+            **macOS**: `chmod +x ratatui-counter-app-macos-*` then `./ratatui-counter-app-macos-*`
+            **Windows**: Run `ratatui-counter-app.exe` directly
           files: artifacts/**/*
           draft: false
           prerelease: false
