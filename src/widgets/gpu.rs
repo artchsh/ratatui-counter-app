@@ -68,10 +68,7 @@ impl GpuWidget {
                     Err(_) => break,
                 };
 
-                let mut desc = std::mem::zeroed();
-                if adapter.GetDesc1(&mut desc).is_err() {
-                    continue;
-                }
+                let desc = adapter.GetDesc1().ok()?;
 
                 let name = String::from_utf16_lossy(&desc.Description)
                     .trim_matches('\0')
@@ -83,11 +80,13 @@ impl GpuWidget {
 
                 let (mem_used, mem_total) = match adapter.cast::<IDXGIAdapter3>() {
                     Ok(adapter3) => {
+                        let mut mem_info = std::mem::zeroed();
                         match adapter3.QueryVideoMemoryInfo(
                             0,
                             DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+                            &mut mem_info,
                         ) {
-                            Ok(info) => (info.CurrentUsage, info.Budget),
+                            Ok(_) => (mem_info.CurrentUsage, mem_info.Budget),
                             Err(_) => continue,
                         }
                     }
