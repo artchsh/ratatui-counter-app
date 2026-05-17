@@ -17,6 +17,7 @@ use crate::widgets::cpu::CpuWidget;
 use crate::widgets::gpu::GpuWidget;
 use crate::widgets::memory::MemoryWidget;
 use crate::widgets::network::NetworkWidget;
+use crate::widgets::processes::{ProcessesWidget, SortBy};
 use crate::widgets::storage::StorageWidget;
 use crate::widgets::temperature::TemperatureWidget;
 
@@ -34,6 +35,7 @@ impl App {
         let mut system = System::new_all();
         system.refresh_cpu_all();
         system.refresh_memory();
+        system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
         let networks = Networks::new_with_refreshed_list();
         let components = Components::new_with_refreshed_list();
@@ -76,6 +78,7 @@ impl App {
     fn refresh(&mut self) {
         self.system.refresh_cpu_all();
         self.system.refresh_memory();
+        self.system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         self.networks.refresh(true);
         self.components.refresh(true);
         self.disks.refresh(true);
@@ -113,6 +116,7 @@ impl Widget for &App {
             Constraint::Length(5),
             Constraint::Length(5),
             Constraint::Length(4),
+            Constraint::Min(6),
         ]).split(inner);
 
         let top_row = Layout::horizontal([
@@ -130,11 +134,18 @@ impl Widget for &App {
             Constraint::Percentage(50),
         ]).split(vertical[2]);
 
+        let proc_row = Layout::horizontal([
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
+        ]).split(vertical[3]);
+
         CpuWidget::new(&self.system).render(top_row[0], buf);
         MemoryWidget::new(&self.system).render(top_row[1], buf);
         GpuWidget::new().render(mid_row[0], buf);
         NetworkWidget::new(&self.networks).render(mid_row[1], buf);
         StorageWidget::new(&self.disks).render(bot_row[0], buf);
         TemperatureWidget::new(&self.components).render(bot_row[1], buf);
+        ProcessesWidget::new(&self.system, SortBy::Cpu).render(proc_row[0], buf);
+        ProcessesWidget::new(&self.system, SortBy::Memory).render(proc_row[1], buf);
     }
 }
