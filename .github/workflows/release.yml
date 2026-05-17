@@ -1,18 +1,47 @@
-name: Release
+name: CI/CD
 
 on:
   push:
+    branches: ['*']
     tags:
       - 'v*'
+  merge_group:
   workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  check:
+    name: Check & Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-check-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check
+        run: cargo check --all-targets
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    needs: check
     permissions:
       contents: read
     strategy:
@@ -20,16 +49,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: ratatui-counter-app-linux
+            artifact: system-info-linux
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact: ratatui-counter-app-macos-intel
+            artifact: system-info-macos-intel
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: ratatui-counter-app-macos-apple-silicon
+            artifact: system-info-macos-apple-silicon
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: ratatui-counter-app-windows
+            artifact: system-info-windows
 
     steps:
       - uses: actions/checkout@v4
@@ -49,31 +78,31 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build release
-        run: cargo build --release --target ${{ matrix.target }} --no-default-features
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package Linux (.deb)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          PKG=ratatui-counter-app_amd64
+          PKG=system-info_amd64
           mkdir -p dist/$PKG/DEBIAN dist/$PKG/usr/bin
-          cp target/${{ matrix.target }}/release/ratatui-counter-app dist/$PKG/usr/bin/
-          chmod +x dist/$PKG/usr/bin/ratatui-counter-app
-          printf 'Package: ratatui-counter-app\nVersion: 0.1.0\nArchitecture: amd64\nMaintainer: artchsh\nDescription: Ratatui counter app\n' \
+          cp target/${{ matrix.target }}/release/system-info dist/$PKG/usr/bin/
+          chmod +x dist/$PKG/usr/bin/system-info
+          printf 'Package: system-info\nVersion: 0.1.0\nArchitecture: amd64\nMaintainer: artchsh\nDescription: System monitor TUI\n' \
             > dist/$PKG/DEBIAN/control
-          dpkg-deb --build dist/$PKG dist/ratatui-counter-app.deb
+          dpkg-deb --build dist/$PKG dist/system-info.deb
 
       - name: Package macOS
         if: runner.os == 'macOS'
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/ratatui-counter-app dist/${{ matrix.artifact }}
+          cp target/${{ matrix.target }}/release/system-info dist/${{ matrix.artifact }}
           chmod +x dist/${{ matrix.artifact }}
 
       - name: Package Windows
         if: matrix.os == 'windows-latest'
         run: |
           mkdir dist
-          copy target\${{ matrix.target }}\release\ratatui-counter-app.exe dist\ratatui-counter-app.exe
+          copy target\${{ matrix.target }}\release\system-info.exe dist\system-info.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -82,27 +111,10 @@ jobs:
           path: dist/*
           retention-days: 1
 
-  source:
-    name: Source Archive
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Create source archive
-        run: git archive --format=zip --output=source-code.zip HEAD
-
-      - name: Upload source artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: source-code
-          path: source-code.zip
-          retention-days: 1
-
   release:
     name: Create Release
-    needs: [build, source]
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -115,27 +127,32 @@ jobs:
         with:
           path: artifacts
 
+      - name: Create source archive
+        run: git archive --format=zip --output=source-code.zip HEAD
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', github.run_number) }}
-          name: Release ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', github.run_number) }}
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
           body: |
             ## Downloads
 
             | Platform | File |
             |----------|------|
             | Source Code | source-code.zip |
-            | Linux x64 | ratatui-counter-app.deb |
-            | macOS Intel | ratatui-counter-app-macos-intel |
-            | macOS Apple Silicon | ratatui-counter-app-macos-apple-silicon |
-            | Windows x64 | ratatui-counter-app.exe |
+            | Linux x64 | system-info.deb |
+            | macOS Intel | system-info-macos-intel |
+            | macOS Apple Silicon | system-info-macos-apple-silicon |
+            | Windows x64 | system-info.exe |
 
             ## Usage
 
-            **Linux**: `sudo dpkg -i ratatui-counter-app.deb` then run `ratatui-counter-app`
-            **macOS**: `chmod +x ratatui-counter-app-macos-*` then `./ratatui-counter-app-macos-*`
-            **Windows**: Run `ratatui-counter-app.exe` directly
-          files: artifacts/**/*
+            **Linux**: `sudo dpkg -i system-info.deb` then run `system-info`
+            **macOS**: `chmod +x system-info-macos-*` then `./system-info-macos-*`
+            **Windows**: Run `system-info.exe` directly
+          files: |
+            source-code.zip
+            artifacts/**/*
           draft: false
           prerelease: false

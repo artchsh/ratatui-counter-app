@@ -87,18 +87,16 @@ impl<'a> StorageWidget<'a> {
             return lower.clone();
         }
 
-        if lower.starts_with("disk") {
-            if let Some(rest) = lower.strip_prefix("disk") {
-                let base: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-                return format!("disk{}", base);
-            }
+        if lower.starts_with("disk")
+            && let Some(rest) = lower.strip_prefix("disk") {
+            let base: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            return format!("disk{}", base);
         }
 
-        if lower.starts_with("rdisk") {
-            if let Some(rest) = lower.strip_prefix("rdisk") {
-                let base: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-                return format!("disk{}", base);
-            }
+        if lower.starts_with("rdisk")
+            && let Some(rest) = lower.strip_prefix("rdisk") {
+            let base: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            return format!("disk{}", base);
         }
 
         if (lower.starts_with("sd") || lower.starts_with("hd") || lower.starts_with("vd")) && lower.len() >= 3 {
@@ -152,7 +150,7 @@ impl Widget for StorageWidget<'_> {
             return;
         }
 
-        let chunks = Layout::vertical(std::iter::repeat(Constraint::Length(1)).take(available_lines)).split(inner);
+        let chunks = Layout::vertical(std::iter::repeat_n(Constraint::Length(1), available_lines)).split(inner);
 
         let total_label = ratatui::text::Span::styled(
             format!(" Total: {} / {} ({:>3}%) ",
@@ -173,47 +171,25 @@ impl Widget for StorageWidget<'_> {
             return;
         }
 
-        let detail_slots = available_lines - 1;
-        if categories.len() <= detail_slots {
-            let mut chunk_idx = 1;
-            for cat in &categories {
-                let percent = if cat.total > 0 { (cat.used as f64 / cat.total as f64 * 100.0) as u16 } else { 0 };
-                let label = ratatui::text::Span::styled(
-                    format!(" {}: {} / {} ({:>3}%) ",
-                        cat.label,
-                        Self::format_bytes(cat.used),
-                        Self::format_bytes(cat.total),
-                        percent),
-                    (Color::Black, cat.color),
-                );
-                Gauge::default()
-                    .gauge_style(cat.color)
-                    .percent(percent)
-                    .label(label)
-                    .use_unicode(true)
-                    .render(chunks[chunk_idx], buf);
-                chunk_idx += 1;
-            }
-        } else {
-            let compact = categories
-                .iter()
-                .map(|cat| {
-                    let percent = if cat.total > 0 {
-                        (cat.used as f64 / cat.total as f64 * 100.0) as u16
-                    } else {
-                        0
-                    };
-                    format!(
-                        "{} {}/{} ({}%)",
-                        cat.label,
-                        Self::format_bytes(cat.used),
-                        Self::format_bytes(cat.total),
-                        percent
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(" | ");
-            Paragraph::new(Line::from(format!(" {} ", compact))).render(chunks[1], buf);
+        let detail_slots = available_lines.saturating_sub(1);
+        let categories_to_show: Vec<&StorageCategory> = categories.iter().take(detail_slots).collect();
+
+        for (chunk_idx, cat) in categories_to_show.iter().enumerate() {
+            let percent = if cat.total > 0 { (cat.used as f64 / cat.total as f64 * 100.0) as u16 } else { 0 };
+            let label = ratatui::text::Span::styled(
+                format!(" {}: {} / {} ({:>3}%) ",
+                    cat.label,
+                    Self::format_bytes(cat.used),
+                    Self::format_bytes(cat.total),
+                    percent),
+                (Color::Black, cat.color),
+            );
+            Gauge::default()
+                .gauge_style(cat.color)
+                .percent(percent)
+                .label(label)
+                .use_unicode(true)
+                .render(chunks[chunk_idx + 1], buf);
         }
     }
 }

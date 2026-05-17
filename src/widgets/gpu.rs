@@ -25,6 +25,11 @@ impl GpuWidget {
         Self { info }
     }
 
+    pub fn refresh(&mut self) {
+        self.info = Self::fetch_gpu_info();
+    }
+
+    #[cfg(not(windows))]
     fn fetch_gpu_info() -> Option<GpuInfo> {
         let nvml = nvml_wrapper::Nvml::init().ok()?;
         let device = nvml.device_by_index(0).ok()?;
@@ -49,12 +54,61 @@ impl GpuWidget {
         })
     }
 
-    pub fn refresh(&mut self) {
-        self.info = Self::fetch_gpu_info();
+    #[cfg(windows)]
+    fn fetch_gpu_info() -> Option<GpuInfo> {
+        use windows::Win32::Graphics::Dxgi::*;
+        use windows::core::Interface;
+
+        unsafe {
+            let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
+
+            for adapter_idx in 0u32.. {
+                let adapter = match factory.EnumAdapters1(adapter_idx) {
+                    Ok(a) => a,
+                    Err(_) => break,
+                };
+
+                let mut desc = std::mem::zeroed();
+                if adapter.GetDesc1(&mut desc).is_err() {
+                    continue;
+                }
+
+                let name = String::from_utf16_lossy(&desc.Description)
+                    .trim_matches('\0')
+                    .to_string();
+
+                if name.is_empty() || name.contains("Microsoft Basic Render") {
+                    continue;
+                }
+
+                let (mem_used, mem_total) = match adapter.cast::<IDXGIAdapter3>() {
+                    Ok(adapter3) => {
+                        match adapter3.QueryVideoMemoryInfo(
+                            0,
+                            DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+                        ) {
+                            Ok(info) => (info.CurrentUsage, info.Budget),
+                            Err(_) => continue,
+                        }
+                    }
+                    Err(_) => continue,
+                };
+
+                return Some(GpuInfo {
+                    name,
+                    utilization: 0,
+                    memory_used: mem_used,
+                    memory_total: mem_total,
+                    temperature: 0,
+                    power_usage: 0,
+                });
+            }
+            None
+        }
     }
 }
 
-impl Widget for GpuWidget {
+impl Widget for &GpuWidget {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::bordered()
             .title(Line::from(" GPU ").bold())
@@ -63,7 +117,7 @@ impl Widget for GpuWidget {
         let inner = block.inner(area);
         block.render(area, buf);
 
-        match self.info {
+        match &self.info {
             Some(info) => {
                 let mem_used_gb = info.memory_used as f64 / 1024.0 / 1024.0 / 1024.0;
                 let mem_total_gb = info.memory_total as f64 / 1024.0 / 1024.0 / 1024.0;
@@ -93,7 +147,7 @@ impl Widget for GpuWidget {
                 Paragraph::new(lines).render(inner, buf);
             }
             None => {
-                Paragraph::new(Line::from(" No NVIDIA GPU "))
+                Paragraph::new(Line::from(" No GPU detected "))
                     .style(Color::DarkGray)
                     .render(inner, buf);
             }

@@ -1,6 +1,6 @@
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Layout, Rect},
     style::{Color, Stylize},
     text::{Line, Span},
     widgets::{Block, Paragraph, Widget},
@@ -23,14 +23,15 @@ impl<'a> TemperatureWidget<'a> {
             if lower.contains("package") || lower.contains("tctl") {
                 return "CPU".to_string();
             }
-            if let Some(num) = lower.chars().find(|c| c.is_ascii_digit()) {
-                return format!("C{}", num);
-            }
             return "CPU".to_string();
         }
 
         if lower.contains("gpu") || lower.contains("nvidia") || lower.contains("amd") || lower.contains("radeon") {
             return "GPU".to_string();
+        }
+
+        if lower.contains("memory") || lower.contains("ram") || lower.contains("dram") || lower.contains("ddr") {
+            return "RAM".to_string();
         }
 
         if lower.contains("soc") {
@@ -69,12 +70,30 @@ impl<'a> TemperatureWidget<'a> {
         }
     }
 
+    fn find_sensor(components: &Components, target: &str) -> Option<f32> {
+        for component in components.iter() {
+            let label = Self::simplify_label(component.label());
+            if label == target
+                && let Some(t) = component.temperature()
+                && t > 0.0 && t < 150.0 {
+                return Some(t);
+            }
+        }
+        None
+    }
+
+    #[cfg(not(windows))]
     fn fallback_gpu_temp() -> Option<u32> {
         let nvml = nvml_wrapper::Nvml::init().ok()?;
         let device = nvml.device_by_index(0).ok()?;
         device
             .temperature(nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu)
             .ok()
+    }
+
+    #[cfg(windows)]
+    fn fallback_gpu_temp() -> Option<u32> {
+        None
     }
 }
 
@@ -87,8 +106,47 @@ impl Widget for TemperatureWidget<'_> {
         let inner = block.inner(area);
         block.render(area, buf);
 
-        let mut temps: Vec<(String, f32)> = Vec::new();
+        let chunks = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(inner);
 
+        let cpu_temp = Self::find_sensor(self.components, "CPU");
+
+        let gpu_temp = Self::find_sensor(self.components, "GPU")
+            .or_else(|| Self::fallback_gpu_temp().map(|t| t as f32));
+
+        let ram_temp = Self::find_sensor(self.components, "RAM");
+
+        let render_temp_line = |label: &str, temp: Option<f32>| -> Line {
+            if let Some(t) = temp {
+                let color = if t > 80.0 {
+                    Color::Red
+                } else if t > 60.0 {
+                    Color::Yellow
+                } else {
+                    Color::Green
+                };
+                Line::from(vec![
+                    Span::raw(format!(" {:<5} ", label)).fg(Color::White),
+                    Span::raw(format!("{:>3.0}°C", t)).fg(color),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::raw(format!(" {:<5} ", label)).fg(Color::White),
+                    Span::raw(" N/A  ").fg(Color::DarkGray),
+                ])
+            }
+        };
+
+        Paragraph::new(render_temp_line("CPU", cpu_temp)).render(chunks[0], buf);
+        Paragraph::new(render_temp_line("GPU", gpu_temp)).render(chunks[1], buf);
+        Paragraph::new(render_temp_line("RAM", ram_temp)).render(chunks[2], buf);
+
+        let mut extras: Vec<Line> = Vec::new();
         for component in self.components.iter() {
             let temp = match component.temperature() {
                 Some(t) if t > 0.0 && t < 150.0 => t,
@@ -96,38 +154,10 @@ impl Widget for TemperatureWidget<'_> {
             };
 
             let label = Self::simplify_label(component.label());
-            if label.is_empty() {
+            if label.is_empty() || label == "CPU" || label == "GPU" || label == "RAM" {
                 continue;
             }
 
-            temps.push((label, temp));
-        }
-
-        if temps.is_empty() {
-            if let Some(gpu_temp) = Self::fallback_gpu_temp() {
-                let color = if gpu_temp > 80 {
-                    Color::Red
-                } else if gpu_temp > 60 {
-                    Color::Yellow
-                } else {
-                    Color::Green
-                };
-                Paragraph::new(Line::from(vec![
-                    Span::raw(" GPU   ").fg(Color::White),
-                    Span::raw(format!("{:>3}°C", gpu_temp)).fg(color),
-                ]))
-                .render(inner, buf);
-            } else {
-                Paragraph::new(Line::from(" No sensors "))
-                    .style(Color::DarkGray)
-                    .render(inner, buf);
-            }
-            return;
-        }
-
-        let mut parts: Vec<Line> = Vec::new();
-
-        for (label, temp) in temps {
             let color = if temp > 80.0 {
                 Color::Red
             } else if temp > 60.0 {
@@ -135,12 +165,14 @@ impl Widget for TemperatureWidget<'_> {
             } else {
                 Color::Green
             };
-            parts.push(Line::from(vec![
+            extras.push(Line::from(vec![
                 Span::raw(format!(" {:<5} ", label)).fg(Color::White),
                 Span::raw(format!("{:>3.0}°C", temp)).fg(color),
             ]));
         }
 
-        Paragraph::new(parts).render(inner, buf);
+        if !extras.is_empty() {
+            Paragraph::new(extras).render(chunks[3], buf);
+        }
     }
 }

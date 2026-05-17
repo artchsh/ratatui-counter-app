@@ -108,10 +108,6 @@ impl<'a> NetworkWidget<'a> {
             return ("ETH", Color::White);
         }
 
-        if lower.starts_with("veth") || lower.starts_with("br-") || lower.starts_with("docker") {
-            return ("VIRT", Color::DarkGray);
-        }
-
         ("NET", Color::White)
     }
 }
@@ -136,7 +132,7 @@ impl Widget for NetworkWidget<'_> {
 
         let visible_interfaces = interfaces.len().min(inner.height as usize);
         let chunks = Layout::vertical(
-            std::iter::repeat(Constraint::Length(1)).take(visible_interfaces)
+            std::iter::repeat_n(Constraint::Length(1), visible_interfaces)
         ).split(inner);
 
         for (i, (name, data)) in interfaces.iter().take(visible_interfaces).enumerate() {

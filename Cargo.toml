@@ -1,5 +1,5 @@
 [package]
-name = "ratatui-counter-app"
+name = "system-info"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,3 +8,11 @@ crossterm = "0.29.0"
 ratatui = "0.30.0"
 sysinfo = { version = "0.33.0", features = ["network"] }
 nvml-wrapper = "0.10.0"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_System_Com",
+    "Win32_System_Threading",
+] }

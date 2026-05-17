@@ -6,10 +6,10 @@ A cross-platform terminal UI system monitor built with Rust and Ratatui. Display
 
 - **CPU**: Brand, core/thread count, frequency, total usage gauge, per-core bar charts
 - **Memory**: RAM and swap usage with percentage gauges
-- **GPU**: NVIDIA GPU monitoring via NVML (utilization, VRAM, temperature, power)
+- **GPU**: GPU monitoring via NVML (Linux/macOS) or DXGI/Windows API (Windows)
 - **Network**: IPv4 interfaces with download/upload speeds, type detection (WiFi/ETH/VPN)
 - **Storage**: SSD/HDD/NVME categorization with deduplicated physical drive sizes
-- **Temperature**: CPU, GPU, SSD, battery sensors with color-coded thresholds
+- **Temperature**: CPU, GPU, RAM sensors with color-coded thresholds
 - **Processes**: Top processes sorted by CPU and memory usage
 
 ## Tech Stack
@@ -20,7 +20,8 @@ A cross-platform terminal UI system monitor built with Rust and Ratatui. Display
 | Ratatui | 0.30.0 | TUI framework |
 | Crossterm | 0.29.0 | Terminal manipulation |
 | Sysinfo | 0.33.0 | System information |
-| NVML-Wrapper | 0.10.0 | NVIDIA GPU monitoring |
+| NVML-Wrapper | 0.10.0 | NVIDIA GPU monitoring (Linux/macOS) |
+| Windows API | 0.58 | GPU monitoring (Windows) |
 
 ## Build
 
@@ -30,15 +31,12 @@ cargo build
 
 # Release build
 cargo build --release
-
-# Without NVIDIA support (faster compile, smaller binary)
-cargo build --release --no-default-features
 ```
 
 ## Usage
 
 ```bash
-./target/release/ratatui-counter-app
+./target/release/system-info
 ```
 
 | Key | Action |
@@ -65,13 +63,13 @@ cargo build --release --no-default-features
 |----------|---------|-------|
 | macOS | Full | Apple Silicon aggregate CPU, NVML optional |
 | Linux | Full | Per-core CPU, NVML required for GPU |
-| Windows | Full | Per-core CPU, NVML required for GPU |
+| Windows | Full | Per-core CPU, DXGI for GPU via windows-rs |
 
 ### Platform-Specific Behavior
 
 **CPU Cores**: macOS Apple Silicon exposes only 1 aggregate CPU entry via sysinfo. The widget displays "ALL" instead of individual cores. Linux and Windows show per-core bars.
 
-**GPU**: NVIDIA GPUs detected via NVML on Linux/Windows. macOS shows "No NVIDIA GPU" (Apple Silicon GPUs not supported by NVML).
+**GPU**: GPU detected via NVML on Linux/macOS, DXGI via windows-rs on Windows. macOS shows "No GPU detected" for Apple Silicon GPUs.
 
 **Storage Deduplication**:
 - macOS: `disk0s1` + `disk0s2` → single `disk0` entry
@@ -81,7 +79,7 @@ cargo build --release --no-default-features
 **Network Interface Detection**:
 - macOS: `en0` → WiFi, `utun*` → VPN
 - Linux: `wlan*` → WiFi, `eth*`/`eno*`/`ens*` → ETH, `wg*` → VPN
-- Windows: Interface prefix fallback
+- Windows: Interface names detected from sysinfo
 
 **Temperature Sensors**:
 - macOS: Filters PMU/tdev/ANS noise, shows CPU/GPU/SSD/BAT

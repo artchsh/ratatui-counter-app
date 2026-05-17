@@ -59,12 +59,10 @@ impl App {
             terminal.draw(|frame| self.draw(frame))?;
 
             let timeout = tick_rate.saturating_sub(last_tick.elapsed());
-            if event::poll(timeout)? {
-                if let Event::Key(key_event) = event::read()? {
-                    if key_event.kind == KeyEventKind::Press {
-                        self.handle_key_event(key_event);
-                    }
-                }
+            if event::poll(timeout)?
+                && let Event::Key(key_event) = event::read()?
+                && key_event.kind == KeyEventKind::Press {
+                self.handle_key_event(key_event);
             }
 
             if last_tick.elapsed() >= tick_rate {
@@ -115,7 +113,7 @@ impl Widget for &App {
         let vertical = Layout::vertical([
             Constraint::Length(5),
             Constraint::Length(5),
-            Constraint::Length(4),
+            Constraint::Length(5),
             Constraint::Min(6),
         ]).split(inner);
 
@@ -141,7 +139,7 @@ impl Widget for &App {
 
         CpuWidget::new(&self.system).render(top_row[0], buf);
         MemoryWidget::new(&self.system).render(top_row[1], buf);
-        GpuWidget::new().render(mid_row[0], buf);
+        (&self.gpu).render(mid_row[0], buf);
         NetworkWidget::new(&self.networks).render(mid_row[1], buf);
         StorageWidget::new(&self.disks).render(bot_row[0], buf);
         TemperatureWidget::new(&self.components).render(bot_row[1], buf);
