@@ -46,10 +46,7 @@ impl<'a> StorageWidget<'a> {
             let available = disk.available_space();
             let used = total.saturating_sub(available);
 
-            let is_nvme = disk_name.to_lowercase().starts_with("nvme")
-                || disk_name.to_lowercase().contains("nvme")
-                || physical_name.to_lowercase().contains("nvme")
-                || physical_name.to_lowercase().starts_with("disk") && total >= 100_000_000_000;
+            let is_nvme = Self::is_nvme(&disk_name, &physical_name);
 
             match (disk.kind(), is_nvme) {
                 (_, true) => {
@@ -74,25 +71,45 @@ impl<'a> StorageWidget<'a> {
         vec![ssd, hdd, nvme].into_iter().filter(|c| c.total > 0).collect()
     }
 
+    fn is_nvme(disk_name: &str, physical_name: &str) -> bool {
+        let d = disk_name.to_lowercase();
+        let p = physical_name.to_lowercase();
+        d.starts_with("nvme") || d.contains("nvme") || p.starts_with("nvme") || p.contains("nvme")
+    }
+
     fn get_physical_device_name(name: &str) -> String {
-        if name.starts_with("disk") {
-            if let Some(rest) = name.strip_prefix("disk") {
+        let lower = name.to_lowercase();
+
+        if lower.starts_with("nvme") {
+            if let Some(pos) = lower.find('p') {
+                return lower[..pos].to_string();
+            }
+            return lower.clone();
+        }
+
+        if lower.starts_with("disk") {
+            if let Some(rest) = lower.strip_prefix("disk") {
                 let base: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
                 return format!("disk{}", base);
             }
         }
-        if name.starts_with("rdisk") {
-            if let Some(rest) = name.strip_prefix("rdisk") {
+
+        if lower.starts_with("rdisk") {
+            if let Some(rest) = lower.strip_prefix("rdisk") {
                 let base: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
                 return format!("disk{}", base);
             }
         }
-        if let Some(pos) = name.find('s') {
-            let prefix = &name[..pos];
-            if prefix.starts_with("disk") || prefix.starts_with("rdisk") {
-                return prefix.to_string();
-            }
+
+        if (lower.starts_with("sd") || lower.starts_with("hd") || lower.starts_with("vd")) && lower.len() >= 3 {
+            let base: String = lower.chars().take(3).collect();
+            return base;
         }
+
+        if lower.len() == 2 && lower.ends_with(':') {
+            return lower.clone();
+        }
+
         name.to_string()
     }
 

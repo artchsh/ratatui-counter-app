@@ -6,10 +6,6 @@ use ratatui::{
     widgets::{Block, Paragraph, Widget},
 };
 
-pub struct GpuWidget {
-    info: Option<GpuInfo>,
-}
-
 struct GpuInfo {
     name: String,
     utilization: u32,
@@ -17,6 +13,10 @@ struct GpuInfo {
     memory_total: u64,
     temperature: u32,
     power_usage: u32,
+}
+
+pub struct GpuWidget {
+    info: Option<GpuInfo>,
 }
 
 impl GpuWidget {
@@ -32,8 +32,11 @@ impl GpuWidget {
         let name = device.name().ok()?.to_string();
         let utilization = device.utilization_rates().ok()?;
         let memory = device.memory_info().ok()?;
-        
-        let temperature = 0u32;
+
+        let temperature = device
+            .temperature(nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu)
+            .ok()
+            .unwrap_or(0);
         let power = device.power_usage().ok().unwrap_or(0);
 
         Some(GpuInfo {
@@ -90,7 +93,7 @@ impl Widget for GpuWidget {
                 Paragraph::new(lines).render(inner, buf);
             }
             None => {
-                Paragraph::new(Line::from(" Apple Silicon GPU "))
+                Paragraph::new(Line::from(" No NVIDIA GPU "))
                     .style(Color::DarkGray)
                     .render(inner, buf);
             }

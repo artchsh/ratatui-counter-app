@@ -19,8 +19,8 @@ impl<'a> TemperatureWidget<'a> {
     fn simplify_label(label: &str) -> String {
         let lower = label.to_lowercase();
 
-        if lower.contains("cpu") || lower.contains("core") || lower.contains("package") {
-            if lower.contains("package") {
+        if lower.contains("cpu") || lower.contains("core") || lower.contains("package") || lower.contains("tctl") {
+            if lower.contains("package") || lower.contains("tctl") {
                 return "CPU".to_string();
             }
             if let Some(num) = lower.chars().find(|c| c.is_ascii_digit()) {
@@ -29,7 +29,7 @@ impl<'a> TemperatureWidget<'a> {
             return "CPU".to_string();
         }
 
-        if lower.contains("gpu") || lower.contains("nvidia") || lower.contains("amd") {
+        if lower.contains("gpu") || lower.contains("nvidia") || lower.contains("amd") || lower.contains("radeon") {
             return "GPU".to_string();
         }
 
@@ -41,12 +41,20 @@ impl<'a> TemperatureWidget<'a> {
             return "BAT".to_string();
         }
 
-        if lower.contains("nand") || lower.contains("ssd") || lower.contains("disk") {
+        if lower.contains("nand") || lower.contains("ssd") || lower.contains("disk") || lower.contains("nvme") {
             return "SSD".to_string();
         }
 
         if lower.contains("pmu") || lower.contains("tdev") || lower.contains("ans") {
             return String::new();
+        }
+
+        if lower.contains("acpitz") || lower.contains("thermal") {
+            return "SYS".to_string();
+        }
+
+        if lower.contains("pch") || lower.contains("chipset") {
+            return "PCH".to_string();
         }
 
         let cleaned: String = label

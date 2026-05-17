@@ -28,19 +28,65 @@ impl<'a> NetworkWidget<'a> {
         }
     }
 
+    fn is_loopback(name: &str) -> bool {
+        let lower = name.to_lowercase();
+        lower == "lo" || lower == "lo0" || lower.starts_with("loopback")
+    }
+
+    fn is_virtual(name: &str) -> bool {
+        let lower = name.to_lowercase();
+        lower.starts_with("docker")
+            || lower.starts_with("br-")
+            || lower.starts_with("veth")
+            || lower.starts_with("vet")
+            || lower.starts_with("virtual")
+            || lower.starts_with("vmware")
+            || lower.starts_with("vmnet")
+            || lower.starts_with("virbr")
+            || lower.starts_with("pan")
+            || lower.starts_with("awdl")
+            || lower.starts_with("llw")
+    }
+
     fn get_interfaces(networks: &Networks) -> Vec<(&String, &sysinfo::NetworkData)> {
         networks
             .iter()
             .filter(|(name, data)| {
-                if name.starts_with("lo") || name.as_str() == "lo0" {
+                if Self::is_loopback(name) {
                     return false;
                 }
-                if name.starts_with("docker") || name.starts_with("br-") || name.starts_with("veth") {
+                if Self::is_virtual(name) {
                     return false;
                 }
                 data.ip_networks().iter().any(|ip| ip.addr.is_ipv4())
             })
             .collect()
+    }
+
+    fn detect_type(name: &str) -> (&'static str, Color) {
+        let lower = name.to_lowercase();
+
+        if lower.starts_with("utun") || lower.starts_with("tailscale") || lower.starts_with("wg") {
+            return ("VPN", Color::Blue);
+        }
+
+        if lower.starts_with("wlan") || lower.starts_with("wl") || lower.starts_with("wi-fi") {
+            return ("WiFi", Color::White);
+        }
+
+        if lower.starts_with("en") && !lower.contains("bridge") && !lower.contains("ether") {
+            return ("WiFi", Color::White);
+        }
+
+        if lower.starts_with("eth") || lower.starts_with("eno") || lower.starts_with("ens") || lower.starts_with("enp") {
+            return ("ETH", Color::White);
+        }
+
+        if lower.starts_with("veth") || lower.starts_with("br-") || lower.starts_with("docker") {
+            return ("VIRT", Color::DarkGray);
+        }
+
+        ("NET", Color::White)
     }
 }
 
@@ -78,21 +124,10 @@ impl Widget for NetworkWidget<'_> {
             let dl = Self::format_speed(data.received());
             let ul = Self::format_speed(data.transmitted());
 
-            let is_tailscale = name.starts_with("utun") || name.starts_with("tailscale");
-            let is_wifi = name.starts_with("en") && !name.contains("bridge");
-
-            let prefix = if is_tailscale {
-                "TS"
-            } else if is_wifi {
-                "WiFi"
-            } else if name.starts_with("en") {
-                "ETH"
-            } else {
-                &name[..name.len().min(4)]
-            };
+            let (prefix, color) = Self::detect_type(name);
 
             let line = Line::from(vec![
-                Span::raw(format!(" {:<4} ", prefix)).fg(if is_tailscale { Color::Blue } else { Color::White }),
+                Span::raw(format!(" {:<4} ", prefix)).fg(color),
                 Span::raw(format!("{:<15} ", ip_str)).fg(Color::DarkGray),
                 "↓".green(),
                 format!("{:>6} ", dl).green(),
