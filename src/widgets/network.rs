@@ -38,7 +38,6 @@ impl<'a> NetworkWidget<'a> {
         lower.starts_with("docker")
             || lower.starts_with("br-")
             || lower.starts_with("veth")
-            || lower.starts_with("vet")
             || lower.starts_with("virtual")
             || lower.starts_with("vmware")
             || lower.starts_with("vmnet")
@@ -49,7 +48,7 @@ impl<'a> NetworkWidget<'a> {
     }
 
     fn get_interfaces(networks: &Networks) -> Vec<(&String, &sysinfo::NetworkData)> {
-        networks
+        let mut interfaces: Vec<(&String, &sysinfo::NetworkData)> = networks
             .iter()
             .filter(|(name, data)| {
                 if Self::is_loopback(name) {
@@ -60,13 +59,40 @@ impl<'a> NetworkWidget<'a> {
                 }
                 data.ip_networks().iter().any(|ip| ip.addr.is_ipv4())
             })
-            .collect()
+            .collect();
+
+        interfaces.sort_by(|(name_a, data_a), (name_b, data_b)| {
+            let rank_a = Self::sort_rank(name_a);
+            let rank_b = Self::sort_rank(name_b);
+            rank_a
+                .cmp(&rank_b)
+                .then_with(|| (data_b.received() + data_b.transmitted()).cmp(&(data_a.received() + data_a.transmitted())))
+        });
+
+        interfaces
+    }
+
+    fn sort_rank(name: &str) -> u8 {
+        let lower = name.to_lowercase();
+        if lower.contains("tailscale") || lower.contains("wireguard") || lower.starts_with("utun") || lower.starts_with("wg") {
+            0
+        } else if lower.starts_with("wlan") || lower.starts_with("wl") || lower.starts_with("wi-fi") {
+            1
+        } else if lower.starts_with("eth") || lower.starts_with("eno") || lower.starts_with("ens") || lower.starts_with("enp") {
+            2
+        } else {
+            3
+        }
     }
 
     fn detect_type(name: &str) -> (&'static str, Color) {
         let lower = name.to_lowercase();
 
-        if lower.starts_with("utun") || lower.starts_with("tailscale") || lower.starts_with("wg") {
+        if lower.contains("tailscale")
+            || lower.contains("wireguard")
+            || lower.starts_with("utun")
+            || lower.starts_with("wg")
+        {
             return ("VPN", Color::Blue);
         }
 
@@ -108,11 +134,12 @@ impl Widget for NetworkWidget<'_> {
             return;
         }
 
+        let visible_interfaces = interfaces.len().min(inner.height as usize);
         let chunks = Layout::vertical(
-            std::iter::repeat(Constraint::Length(1)).take(interfaces.len())
+            std::iter::repeat(Constraint::Length(1)).take(visible_interfaces)
         ).split(inner);
 
-        for (i, (name, data)) in interfaces.iter().enumerate() {
+        for (i, (name, data)) in interfaces.iter().take(visible_interfaces).enumerate() {
             let ipv4: Vec<String> = data
                 .ip_networks()
                 .iter()

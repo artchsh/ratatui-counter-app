@@ -68,6 +68,14 @@ impl<'a> TemperatureWidget<'a> {
             cleaned
         }
     }
+
+    fn fallback_gpu_temp() -> Option<u32> {
+        let nvml = nvml_wrapper::Nvml::init().ok()?;
+        let device = nvml.device_by_index(0).ok()?;
+        device
+            .temperature(nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu)
+            .ok()
+    }
 }
 
 impl Widget for TemperatureWidget<'_> {
@@ -78,13 +86,6 @@ impl Widget for TemperatureWidget<'_> {
 
         let inner = block.inner(area);
         block.render(area, buf);
-
-        if self.components.is_empty() {
-            Paragraph::new(Line::from(" No sensors "))
-                .style(Color::DarkGray)
-                .render(inner, buf);
-            return;
-        }
 
         let mut temps: Vec<(String, f32)> = Vec::new();
 
@@ -103,9 +104,24 @@ impl Widget for TemperatureWidget<'_> {
         }
 
         if temps.is_empty() {
-            Paragraph::new(Line::from(" No valid sensors "))
-                .style(Color::DarkGray)
+            if let Some(gpu_temp) = Self::fallback_gpu_temp() {
+                let color = if gpu_temp > 80 {
+                    Color::Red
+                } else if gpu_temp > 60 {
+                    Color::Yellow
+                } else {
+                    Color::Green
+                };
+                Paragraph::new(Line::from(vec![
+                    Span::raw(" GPU   ").fg(Color::White),
+                    Span::raw(format!("{:>3}°C", gpu_temp)).fg(color),
+                ]))
                 .render(inner, buf);
+            } else {
+                Paragraph::new(Line::from(" No sensors "))
+                    .style(Color::DarkGray)
+                    .render(inner, buf);
+            }
             return;
         }
 

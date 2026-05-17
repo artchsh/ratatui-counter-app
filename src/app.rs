@@ -80,7 +80,7 @@ impl App {
         self.system.refresh_memory();
         self.system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         self.networks.refresh(true);
-        self.components.refresh(true);
+        self.components.refresh(false);
         self.disks.refresh(true);
         self.gpu.refresh();
     }
