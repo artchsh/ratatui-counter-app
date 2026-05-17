@@ -36,6 +36,16 @@ impl<'a> CpuWidget<'a> {
         }
         bar
     }
+
+    fn usage_color(usage: f32) -> Color {
+        if usage > 80.0 {
+            Color::Red
+        } else if usage > 50.0 {
+            Color::Yellow
+        } else {
+            Color::Green
+        }
+    }
 }
 
 impl Widget for CpuWidget<'_> {
@@ -96,13 +106,7 @@ impl Widget for CpuWidget<'_> {
 
         let core_lines: Vec<Line> = if is_aggregate {
             let usage = global_usage;
-            let color = if usage > 80.0 {
-                Color::Red
-            } else if usage > 50.0 {
-                Color::Yellow
-            } else {
-                Color::Green
-            };
+            let color = Self::usage_color(usage);
             let bar = Self::usage_to_bar(usage, bar_width);
             vec![Line::from(vec![
                 Span::raw("ALL ").fg(Color::DarkGray),
@@ -110,25 +114,54 @@ impl Widget for CpuWidget<'_> {
                 Span::raw(bar).fg(color),
             ])]
         } else {
-            cpus
-                .iter()
-                .map(|cpu| {
+            let available_lines = chunks[2].height as usize;
+
+            if cpus.len() <= available_lines.max(1) {
+                cpus
+                    .iter()
+                    .map(|cpu| {
+                        let usage = cpu.cpu_usage();
+                        let color = Self::usage_color(usage);
+                        let bar = Self::usage_to_bar(usage, bar_width);
+                        Line::from(vec![
+                            Span::raw(format!("{:>3} ", cpu.name())).fg(Color::DarkGray),
+                            Span::raw(format!("{:>3.0}% ", usage)).fg(color),
+                            Span::raw(bar).fg(color),
+                        ])
+                    })
+                    .collect()
+            } else {
+                let max_width = chunks[2].width as usize;
+                let mut lines: Vec<Vec<Span>> = vec![Vec::new()];
+                let mut current_len = 0usize;
+
+                for (idx, cpu) in cpus.iter().enumerate() {
                     let usage = cpu.cpu_usage();
-                    let color = if usage > 80.0 {
-                        Color::Red
-                    } else if usage > 50.0 {
-                        Color::Yellow
-                    } else {
-                        Color::Green
-                    };
-                    let bar = Self::usage_to_bar(usage, bar_width);
-                    Line::from(vec![
-                        Span::raw(format!("{:>3} ", cpu.name())).fg(Color::DarkGray),
-                        Span::raw(format!("{:>3.0}% ", usage)).fg(color),
-                        Span::raw(bar).fg(color),
-                    ])
-                })
-                .collect()
+                    let color = Self::usage_color(usage);
+                    let block_idx = ((usage / 100.0) * 8.0).round() as usize;
+                    let token = format!("{:02}{}", idx, BLOCKS[block_idx.min(8)]);
+                    let token_len = token.len() + 1;
+
+                    if current_len + token_len > max_width && !lines.last().is_some_and(|l| l.is_empty()) {
+                        lines.push(Vec::new());
+                        current_len = 0;
+                    }
+
+                    if let Some(line) = lines.last_mut() {
+                        if !line.is_empty() {
+                            line.push(Span::raw(" "));
+                        }
+                        line.push(Span::styled(token, color));
+                        current_len += token_len;
+                    }
+                }
+
+                lines
+                    .into_iter()
+                    .take(available_lines.max(1))
+                    .map(Line::from)
+                    .collect()
+            }
         };
 
         Paragraph::new(core_lines)
